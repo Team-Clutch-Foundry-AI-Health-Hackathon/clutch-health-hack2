@@ -11,9 +11,11 @@ import { CheckCircle2, Circle, ChevronLeft, ChevronRight, Trophy, AlertTriangle 
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import type { HealthAnalysis } from '@/lib/openai';
+import { useUser } from '@/lib/context/user-context';
 
 export default function DailyCheckInPage() {
   const { toast } = useToast();
+  const { userProfile } = useUser();
   const [currentStep, setCurrentStep] = useState(0);
   const [moodValue, setMoodValue] = useState(3);
   const [energyValue, setEnergyValue] = useState(50);
@@ -67,13 +69,14 @@ export default function DailyCheckInPage() {
         energy: energyValue,
         sleep: sleepHours,
         symptoms,
-        // Add user profile data from context/storage
-        userProfile: {
-          age: 35, // Example data
-          gender: 'female',
-          conditions: ['hypertension'],
-          medications: ['lisinopril'],
-        }
+        userProfile: userProfile ? {
+          age: parseInt(userProfile.age),
+          gender: userProfile.gender,
+          conditions: userProfile.currentConditions.split(',').map(c => c.trim()).filter(Boolean),
+          medications: userProfile.medications.split(',').map(m => m.trim()).filter(Boolean),
+          allergies: userProfile.allergies.split(',').map(a => a.trim()).filter(Boolean),
+          lifestyle: userProfile.lifestyle
+        } : null
       };
 
       const response = await fetch('/api/health/analyze', {

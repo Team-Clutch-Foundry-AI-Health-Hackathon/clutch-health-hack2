@@ -11,10 +11,12 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { HeartPulse } from 'lucide-react';
+import { useUser } from '@/lib/context/user-context';
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const { saveUserProfile } = useUser();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     age: '',
@@ -65,8 +67,9 @@ export default function OnboardingPage() {
     if (step < 3) {
       setStep(step + 1);
     } else {
-      // Here you would typically send the data to your backend
-      console.log('Form data:', formData);
+      // Save the user profile data
+      saveUserProfile(formData);
+      
       toast({
         title: "Profile created successfully!",
         description: "Welcome to HealthQuest. Let's start your health journey.",
