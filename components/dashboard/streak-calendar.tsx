@@ -4,11 +4,19 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { CheckCircle2 } from 'lucide-react';
 
+interface DayData {
+  date: Date;
+  formattedDate: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  hasCheckIn: boolean;
+}
+
 export function StreakCalendar() {
   // Generate the last 35 days for the calendar (5 weeks)
-  const getDaysArray = () => {
+  const getDaysArray = (): DayData[] => {
     const today = new Date();
-    const days = [];
+    const days: DayData[] = [];
     
     for (let i = 34; i >= 0; i--) {
       const date = new Date();
@@ -29,8 +37,8 @@ export function StreakCalendar() {
   const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   
   // Group days into weeks
-  const weeks = [];
-  let currentWeek = [];
+  const weeks: DayData[][] = [];
+  let currentWeek: DayData[] = [];
   
   days.forEach((day, index) => {
     currentWeek.push(day);

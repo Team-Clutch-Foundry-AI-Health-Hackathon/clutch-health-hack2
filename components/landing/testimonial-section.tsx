@@ -108,7 +108,7 @@ export default function TestimonialSection() {
                         <Star key={i} className="w-5 h-5 fill-yellow-500 text-yellow-500" />
                       ))}
                     </div>
-                    <p className="text-lg mb-6">"{testimonials[currentIndex].content}"</p>
+                    <p className="text-lg mb-6">{testimonials[currentIndex].content}</p>
                     <Avatar className="h-16 w-16 mb-4">
                       <AvatarImage src={testimonials[currentIndex].avatar} />
                       <AvatarFallback>{testimonials[currentIndex].author.split(' ').map(n => n[0]).join('')}</AvatarFallback>

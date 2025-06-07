@@ -127,7 +127,7 @@ export function HealthStats() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="text-sm text-muted-foreground mt-2 text-center">You're averaging 7.6 hours of sleep, with more sleep on weekends.</p>
+        <p className="text-sm text-muted-foreground mt-2 text-center">You&apos;re averaging 7.6 hours of sleep, with more sleep on weekends.</p>
       </TabsContent>
     </Tabs>
   );

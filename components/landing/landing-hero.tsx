@@ -79,7 +79,7 @@ export default function LandingHero() {
                 </div>
               </div>
               <div className="p-6">
-                <h3 className="font-semibold text-lg mb-4">Today's Health Check</h3>
+                <h3 className="font-semibold text-lg mb-4">Today&apos;s Health Check</h3>
                 <div className="space-y-4">
                   <div className="bg-secondary/50 p-4 rounded-lg">
                     <p className="font-medium mb-2">How are you feeling today?</p>
