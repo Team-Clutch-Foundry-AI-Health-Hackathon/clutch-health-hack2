@@ -24,19 +24,17 @@ import Link from 'next/link';
 
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
+  const [checkInStreak, setCheckInStreak] = useState(7);
+  const [totalXp, setTotalXp] = useState(1240);
+  const [nextLevelXp, setNextLevelXp] = useState(1500);
+  const [level, setLevel] = useState(5);
+  const [todayCompleted, setTodayCompleted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
   if (!mounted) return null;
-
-  // Normally this data would come from an API
-  const checkInStreak = 7;
-  const totalXp = 1240;
-  const nextLevelXp = 1500;
-  const level = 5;
-  const todayCompleted = false;
 
   const progressToNextLevel = Math.round((totalXp / nextLevelXp) * 100);
   
