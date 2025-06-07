@@ -396,7 +396,7 @@ const VisitSummary = () => {
                 disabled={isSending}
               >
                 <Send size={16} />
-                {isSending ? "Sending..." : "Send to RAG"}
+                {isSending ? "Sending..." : "Get Second Opinion"}
               </Button>
             </>
           )}
