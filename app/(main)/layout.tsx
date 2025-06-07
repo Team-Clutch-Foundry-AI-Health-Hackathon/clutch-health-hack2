@@ -10,7 +10,8 @@ import {
   Settings,
   User,
   Menu,
-  X
+  X,
+  Activity
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -51,6 +52,12 @@ export default function MainLayout({
       icon: <Award className="h-5 w-5" />,
       href: '/achievements',
       active: pathname === '/achievements',
+    },
+    {
+      label: 'Clinician View',
+      icon: <Activity className="h-5 w-5" />,
+      href: '/dashboard/clinician',
+      active: pathname === '/dashboard/clinician',
     },
     {
       label: 'Profile',

@@ -3,8 +3,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Download, FileText, Copy, Send } from "lucide-react";
+import { Download, FileText, Copy, Send, Activity, AlertTriangle, Eye } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { ClinicalAnalysis } from "@/lib/openai";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 interface VisitSummaryData {
   patient_id: string;
@@ -45,6 +54,9 @@ const VisitSummary = () => {
   const [currentVisit, setCurrentVisit] = useState<VisitSummaryData | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<ClinicalAnalysis | null>(null);
+  const [showAnalysis, setShowAnalysis] = useState(false);
   const [formData, setFormData] = useState({
     clinical_notes: "",
     assessment_plan: ""
@@ -187,6 +199,42 @@ const VisitSummary = () => {
     });
   };
 
+  const handleAnalyzeWithAI = async () => {
+    if (!currentVisit) return;
+    
+    setIsAnalyzing(true);
+    try {
+      const response = await fetch('/api/health/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          visit_summary: currentVisit,
+          type: 'clinical_analysis'
+        }),
+      });
+
+      if (!response.ok) throw new Error('Analysis failed');
+      
+      const analysisResult = await response.json();
+      setAnalysis(analysisResult);
+      setShowAnalysis(true);
+      
+      toast({
+        title: "Analysis Complete",
+        description: "The visit summary has been analyzed by AI.",
+      });
+    } catch (error) {
+      console.error('Analysis error:', error);
+      toast({
+        variant: "destructive",
+        title: "Analysis failed",
+        description: "Unable to analyze the visit summary. Please try again.",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleSendToRAG = async () => {
     if (!currentVisit) return;
     
@@ -223,6 +271,78 @@ const VisitSummary = () => {
     }
   };
 
+  const renderAnalysisContent = () => {
+    if (!analysis) return null;
+
+    return (
+      <div className="space-y-6">
+        <div>
+          <h4 className="font-medium mb-2">Primary Diagnosis</h4>
+          <ul className="list-disc list-inside space-y-1">
+            {analysis.diagnosis.map((item, index) => (
+              <li key={index} className="text-muted-foreground">{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="font-medium mb-2">Differential Diagnosis</h4>
+          <ul className="list-disc list-inside space-y-1">
+            {analysis.differentialDiagnosis.map((item, index) => (
+              <li key={index} className="text-muted-foreground">{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="font-medium mb-2">Recommended Tests</h4>
+          <ul className="list-disc list-inside space-y-1">
+            {analysis.recommendedTests.map((item, index) => (
+              <li key={index} className="text-muted-foreground">{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="font-medium mb-2">Treatment Plan</h4>
+          <ul className="list-disc list-inside space-y-1">
+            {analysis.treatmentPlan.map((item, index) => (
+              <li key={index} className="text-muted-foreground">{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div>
+          <h4 className="font-medium mb-2">Follow-up Recommendations</h4>
+          <ul className="list-disc list-inside space-y-1">
+            {analysis.followUpRecommendations.map((item, index) => (
+              <li key={index} className="text-muted-foreground">{item}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div className={`p-4 rounded-lg ${
+          analysis.urgency === 'urgent'
+            ? 'bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
+            : analysis.urgency === 'soon'
+            ? 'bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
+            : 'bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+        }`}>
+          <div className="flex items-center">
+            <AlertTriangle className={`h-5 w-5 mr-2 ${
+              analysis.urgency === 'urgent'
+                ? 'text-red-600 dark:text-red-400'
+                : analysis.urgency === 'soon'
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : 'text-green-600 dark:text-green-400'
+            }`} />
+            <h4 className="font-medium">Urgency Level: {analysis.urgency.charAt(0).toUpperCase() + analysis.urgency.slice(1)}</h4>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -231,16 +351,45 @@ const VisitSummary = () => {
           <p className="text-gray-600">Compile and export visit data for RAG systems</p>
         </div>
         <div className="flex gap-2">
-          <Button onClick={handleLoadSampleCase} variant="outline" className="flex items-center gap-2">
-            <FileText size={16} />
-            Load Sample Case
-          </Button>
+          {!currentVisit && (
+            <Button onClick={handleLoadSampleCase} variant="outline" className="flex items-center gap-2">
+              <FileText size={16} />
+              Load Sample Case
+            </Button>
+          )}
           {currentVisit && (
             <>
               <Button onClick={handleExportRAG} className="flex items-center gap-2">
                 <Download size={16} />
                 Export RAG Payload
               </Button>
+              <Button 
+                onClick={handleAnalyzeWithAI} 
+                className="flex items-center gap-2"
+                disabled={isAnalyzing}
+              >
+                <Activity size={16} />
+                {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+              </Button>
+              {analysis && (
+                <Dialog open={showAnalysis} onOpenChange={setShowAnalysis}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" className="flex items-center gap-2">
+                      <Eye size={16} />
+                      View AI Analysis
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+                    <DialogHeader>
+                      <DialogTitle>AI Analysis Results</DialogTitle>
+                      <DialogDescription>
+                        Analysis of the visit summary by AI
+                      </DialogDescription>
+                    </DialogHeader>
+                    {renderAnalysisContent()}
+                  </DialogContent>
+                </Dialog>
+              )}
               <Button 
                 onClick={handleSendToRAG} 
                 className="flex items-center gap-2"
