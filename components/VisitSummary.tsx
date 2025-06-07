@@ -3,9 +3,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Download, FileText, Copy, Send, Activity, AlertTriangle, Eye } from "lucide-react";
+import { Download, FileText, Copy, Send, Activity, AlertTriangle, Eye, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { ClinicalAnalysis } from "@/lib/openai";
+import type { HealthAnalysis } from "@/lib/openai";
 import {
   Dialog,
   DialogContent,
@@ -50,175 +50,100 @@ interface VisitSummaryData {
   user_id: string;
 }
 
-const VisitSummary = () => {
-  const [currentVisit, setCurrentVisit] = useState<VisitSummaryData | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [isSending, setIsSending] = useState(false);
+interface VisitSummaryProps {
+  visitSummaryData: VisitSummaryData;
+  onClose: () => void;
+}
+
+interface Reference {
+  title: string;
+  journal: string;
+  year: string;
+  url: string;
+}
+
+interface PastCase {
+  date: string;
+  diagnosis: string[];
+  treatment: string[];
+  outcome: string[];
+}
+
+export function VisitSummary({ visitSummaryData, onClose }: VisitSummaryProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysis, setAnalysis] = useState<ClinicalAnalysis | null>(null);
-  const [showAnalysis, setShowAnalysis] = useState(false);
-  const [formData, setFormData] = useState({
-    clinical_notes: "",
-    assessment_plan: ""
-  });
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<HealthAnalysis | null>(null);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [showAnalysisResultOnPage, setShowAnalysisResultOnPage] = useState(false);
   const { toast } = useToast();
 
-  // Sample visit data based on the case provided
-  const sampleVisit: VisitSummaryData = {
-    patient_id: "patient-001",
-    visit_date: new Date().toISOString(),
-    biodata: {
-      name: "Mr. Mutuma Mwani",
-      age: 72,
-      gender: "male",
-      occupation: "Retired teacher",
-      marital_status: "Married",
-      residence: "Mwiki"
-    },
-    chief_complaint: "Difficulty in urination for 6 months",
-    history_present_illness: "Onset: Gradual\nProgression: Worsening urinary stream, increased frequency, especially nocturia (3–4 times per night).\nAssociated symptoms: Hesitancy, intermittency, straining, sensation of incomplete voiding. No hematuria or dysuria initially.\nPain: Mild perineal discomfort.\nWeight loss (~5 kg in 3 months) and fatigue noted recently.",
-    past_medical_history: "Hypertension for 10 years, well controlled.\nNo previous urological interventions.",
-    family_history: "Father died of 'prostate problems' in his 80s.",
-    social_history: "Non-smoker, moderate alcohol intake.\nSedentary lifestyle.",
-    review_of_systems: "No lower limb weakness or numbness.\nNo constipation or back pain.",
-    physical_examination: {
-      vital_signs: "BP 135/85 mmHg, HR 78 bpm, afebrile",
-      general_examination: "Appears elderly, mildly cachectic",
-      systemic_examination: "Abdominal Exam: No masses or organomegaly. Bladder not palpable.\nNeurological Exam: Normal lower limb motor and sensory functions. Intact anal sphincter tone.",
-      special_examinations: "Digital Rectal Examination (DRE): Prostate: Hard, irregular surface with nodularity, especially on the right lobe. Median sulcus obliterated. No tenderness."
-    },
-    investigations: [
-      {
-        type: "laboratory",
-        name: "PSA (Prostate Specific Antigen)",
-        results: "55 ng/mL",
-        reference_values: "normal < 4 ng/mL",
-        interpretation: "Significantly elevated, concerning for prostate malignancy"
-      },
-      {
-        type: "laboratory",
-        name: "Full Blood Count",
-        results: "Mild normocytic normochromic anemia (Hb 11 g/dL)",
-        interpretation: "Mild anemia, possibly related to chronic disease"
-      },
-      {
-        type: "laboratory",
-        name: "Renal Function Tests",
-        results: "Urea 12 mmol/L, Creatinine 140 µmol/L",
-        interpretation: "Suggesting post-renal obstruction"
-      },
-      {
-        type: "imaging",
-        name: "TRUS (Transrectal Ultrasound)",
-        results: "Hypoechoic lesion in peripheral zone of prostate",
-        interpretation: "Suspicious for malignancy"
-      },
-      {
-        type: "imaging",
-        name: "MRI Pelvis",
-        results: "Extracapsular extension, likely seminal vesicle invasion",
-        interpretation: "Advanced local disease"
-      },
-      {
-        type: "imaging",
-        name: "Bone Scan",
-        results: "Multiple sclerotic lesions in the lumbar spine and pelvis",
-        interpretation: "Metastatic disease"
-      },
-      {
-        type: "histology",
-        name: "Prostate Biopsy",
-        results: "Adenocarcinoma, Gleason score 8 (4+4)",
-        interpretation: "High-grade prostate cancer"
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await fetch('/api/health/load-cases', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload file');
       }
-    ],
-    user_id: "user-1"
-  };
 
-  const generateRAGPayload = (visit: VisitSummaryData) => {
-    return {
-      visit_id: `visit-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      patient_data: visit,
-      clinical_summary: {
-        primary_diagnosis: "Prostate Cancer T3N0M1 (Gleason 8)",
-        key_findings: [
-          "Significantly elevated PSA (55 ng/mL)",
-          "Hard, irregular prostate on DRE",
-          "High-grade adenocarcinoma (Gleason 8)",
-          "Extracapsular extension on MRI",
-          "Bone metastases on bone scan"
-        ],
-        red_flags: [
-          "Weight loss",
-          "Bone metastases",
-          "High Gleason score",
-          "Elevated creatinine"
-        ]
-      },
-      metadata: {
-        case_complexity: "high",
-        urgency_level: "urgent",
-        specialty_required: ["oncology", "urology"],
-        created_by: visit.user_id
-      }
-    };
-  };
-
-  const handleLoadSampleCase = () => {
-    setCurrentVisit(sampleVisit);
-    toast({
-      title: "Sample Case Loaded",
-      description: "Mr. Mutuma Mwani's case has been loaded successfully.",
-    });
-  };
-
-  const handleExportRAG = () => {
-    if (!currentVisit) return;
-    
-    const payload = generateRAGPayload(currentVisit);
-    const jsonString = JSON.stringify(payload, null, 2);
-    
-    // Copy to clipboard
-    navigator.clipboard.writeText(jsonString);
-    
-    // Also trigger download
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `visit-${currentVisit.patient_id}-${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    
-    toast({
-      title: "RAG Payload Generated",
-      description: "Visit data has been formatted for RAG system and copied to clipboard.",
-    });
+      const result = await response.json();
+      setUploadedFile(file);
+      toast({
+        title: "Success",
+        description: "Past medical cases have been loaded and will be used for analysis.",
+      });
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast({
+        variant: "destructive",
+        title: "Upload failed",
+        description: "Failed to load past medical cases. Please try again.",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleAnalyzeWithAI = async () => {
-    if (!currentVisit) return;
-    
+    if (!uploadedFile) {
+      toast({
+        variant: "destructive",
+        title: "No file uploaded",
+        description: "Please upload a PDF file first before analyzing.",
+      });
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
       const response = await fetch('/api/health/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          visit_summary: currentVisit,
-          type: 'clinical_analysis'
+          type: 'clinical_analysis',
+          visit_summary: {
+            ...visitSummaryData,
+          }
         }),
       });
 
       if (!response.ok) throw new Error('Analysis failed');
       
-      const analysisResult = await response.json();
-      setAnalysis(analysisResult);
-      setShowAnalysis(true);
-      
+      const analysisResult: HealthAnalysis = await response.json();
+      setAiAnalysisResult(analysisResult);
+      setShowAnalysisModal(true);
+      setShowAnalysisResultOnPage(true);
       toast({
         title: "Analysis Complete",
         description: "The visit summary has been analyzed by AI.",
@@ -235,43 +160,7 @@ const VisitSummary = () => {
     }
   };
 
-  const handleSendToRAG = async () => {
-    if (!currentVisit) return;
-    
-    setIsSending(true);
-    try {
-      const payload = generateRAGPayload(currentVisit);
-      const response = await fetch('http://jw408ssgw800osg0o0cok4kw.4.222.184.96.sslip.io', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error('Server error:', errorData || response.statusText);
-        throw new Error(errorData?.message || response.statusText || 'Failed to send data to RAG model');
-      }
-
-      toast({
-        title: "Success",
-        description: "Visit summary sent to RAG model successfully",
-      });
-    } catch (error) {
-      console.error('Error sending to RAG:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to send visit summary to RAG model",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSending(false);
-    }
-  };
-
-  const renderAnalysisContent = () => {
+  const renderAnalysisContent = (analysis: HealthAnalysis | null) => {
     if (!analysis) return null;
 
     return (
@@ -279,64 +168,62 @@ const VisitSummary = () => {
         <div>
           <h4 className="font-medium mb-2">Primary Diagnosis</h4>
           <ul className="list-disc list-inside space-y-1">
-            {analysis.diagnosis.map((item, index) => (
-              <li key={index} className="text-muted-foreground">{item}</li>
+            {analysis.diagnosis.guidelines.map((guideline: string, index: number) => (
+              <li key={index} className="text-muted-foreground">{guideline}</li>
             ))}
           </ul>
         </div>
 
         <div>
-          <h4 className="font-medium mb-2">Differential Diagnosis</h4>
+          <h4 className="font-medium mb-2">Recommended Next Steps</h4>
           <ul className="list-disc list-inside space-y-1">
-            {analysis.differentialDiagnosis.map((item, index) => (
-              <li key={index} className="text-muted-foreground">{item}</li>
+            {analysis.diagnosis.nextSteps.map((step: string, index: number) => (
+              <li key={index} className="text-muted-foreground">{step}</li>
             ))}
           </ul>
         </div>
 
         <div>
-          <h4 className="font-medium mb-2">Recommended Tests</h4>
-          <ul className="list-disc list-inside space-y-1">
-            {analysis.recommendedTests.map((item, index) => (
-              <li key={index} className="text-muted-foreground">{item}</li>
-            ))}
-          </ul>
+          <h4 className="font-medium mb-2">Prognosis Analysis</h4>
+          <div className="space-y-3">
+            <div className="p-3 bg-secondary/50 rounded-lg">
+              <h5 className="font-medium mb-1">Based on Current Research</h5>
+              <p className="text-muted-foreground">{analysis.prognosis.researchBased}</p>
+            </div>
+            <div className="p-3 bg-secondary/50 rounded-lg">
+              <h5 className="font-medium mb-1">Based on Similar Past Cases</h5>
+              <p className="text-muted-foreground">{analysis.prognosis.visitBased}</p>
+            </div>
+          </div>
         </div>
 
         <div>
-          <h4 className="font-medium mb-2">Treatment Plan</h4>
-          <ul className="list-disc list-inside space-y-1">
-            {analysis.treatmentPlan.map((item, index) => (
-              <li key={index} className="text-muted-foreground">{item}</li>
-            ))}
-          </ul>
+          <h4 className="font-medium mb-2">Final Recommendation</h4>
+          <div className="p-4 bg-primary/5 rounded-lg border border-primary/20">
+            <p className="text-muted-foreground">{analysis.finalRecommendation}</p>
+          </div>
         </div>
 
         <div>
-          <h4 className="font-medium mb-2">Follow-up Recommendations</h4>
-          <ul className="list-disc list-inside space-y-1">
-            {analysis.followUpRecommendations.map((item, index) => (
-              <li key={index} className="text-muted-foreground">{item}</li>
+          <h4 className="font-medium mb-2">Medical References</h4>
+          <div className="space-y-3">
+            {analysis.references.map((ref: Reference, index: number) => (
+              <div key={index} className="p-3 bg-secondary/50 rounded-lg">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-medium">{ref.title}</p>
+                    <p className="text-sm text-muted-foreground">{ref.journal}, {ref.year}</p>
+                  </div>
+                  {ref.url && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={ref.url} target="_blank" rel="noopener noreferrer">
+                        Open Study
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
             ))}
-          </ul>
-        </div>
-
-        <div className={`p-4 rounded-lg ${
-          analysis.urgency === 'urgent'
-            ? 'bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800'
-            : analysis.urgency === 'soon'
-            ? 'bg-yellow-100 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800'
-            : 'bg-green-100 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
-        }`}>
-          <div className="flex items-center">
-            <AlertTriangle className={`h-5 w-5 mr-2 ${
-              analysis.urgency === 'urgent'
-                ? 'text-red-600 dark:text-red-400'
-                : analysis.urgency === 'soon'
-                ? 'text-yellow-600 dark:text-yellow-400'
-                : 'text-green-600 dark:text-green-400'
-            }`} />
-            <h4 className="font-medium">Urgency Level: {analysis.urgency.charAt(0).toUpperCase() + analysis.urgency.slice(1)}</h4>
           </div>
         </div>
       </div>
@@ -344,161 +231,250 @@ const VisitSummary = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Current Visit Summary</h2>
-          <p className="text-gray-600">Compile and export visit data for RAG systems</p>
-        </div>
-        <div className="flex gap-2">
-          {!currentVisit && (
-            <Button onClick={handleLoadSampleCase} variant="outline" className="flex items-center gap-2">
-              <FileText size={16} />
-              Load Sample Case
-            </Button>
-          )}
-          {currentVisit && (
-            <>
-              <Button onClick={handleExportRAG} className="flex items-center gap-2">
-                <Download size={16} />
-                Export RAG Payload
-              </Button>
-              <Button 
-                onClick={handleAnalyzeWithAI} 
-                className="flex items-center gap-2"
-                disabled={isAnalyzing}
+    <Card className="w-full max-w-4xl mx-auto">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-2xl font-bold">Current Visit Summary</CardTitle>
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" className="ml-auto">
+            <FileText className="mr-2 h-4 w-4" /> Load Sample Case
+          </Button>
+          <Button variant="outline" className="ml-auto">
+            <Download className="mr-2 h-4 w-4" /> Export RAG Payload
+          </Button>
+          <Button className="ml-auto">
+            <Send className="mr-2 h-4 w-4" /> Send to RAG
+          </Button>
+          <Dialog open={showAnalysisModal} onOpenChange={(open) => {
+            setShowAnalysisModal(open);
+            if (!open && aiAnalysisResult) {
+              setShowAnalysisResultOnPage(true);
+            }
+          }}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  if (uploadedFile) {
+                    handleAnalyzeWithAI();
+                  } else {
+                    setShowAnalysisModal(true);
+                    setAiAnalysisResult(null);
+                  }
+                }}
               >
-                <Activity size={16} />
-                {isAnalyzing ? "Analyzing..." : "Analyze with AI"}
+                <Activity className="mr-2 h-4 w-4" /> Get Second Opinion
               </Button>
-              {analysis && (
-                <Dialog open={showAnalysis} onOpenChange={setShowAnalysis}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="flex items-center gap-2">
-                      <Eye size={16} />
-                      View AI Analysis
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-                    <DialogHeader>
-                      <DialogTitle>AI Analysis Results</DialogTitle>
-                      <DialogDescription>
-                        Analysis of the visit summary by AI
-                      </DialogDescription>
-                    </DialogHeader>
-                    {renderAnalysisContent()}
-                  </DialogContent>
-                </Dialog>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[800px] overflow-y-auto max-h-[90vh]">
+              <DialogHeader>
+                <DialogTitle>AI Health Analysis</DialogTitle>
+                <DialogDescription>
+                  Upload past medical cases and get an AI-powered analysis of the current visit.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                {!uploadedFile && (
+                  <div className="bg-secondary/50 p-4 rounded-lg">
+                    <h3 className="font-medium mb-2">Step 1: Upload Past Medical Cases</h3>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Upload a PDF file containing past medical cases. These cases will be used as reference for analysis.
+                    </p>
+                    <div className="flex items-center gap-4">
+                      <input
+                        type="file"
+                        accept=".pdf"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="case-upload"
+                        disabled={isUploading}
+                      />
+                      <label
+                        htmlFor="case-upload"
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-md border cursor-pointer ${
+                          isUploading
+                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                            : 'bg-white hover:bg-gray-50'
+                        }`}
+                      >
+                        <Upload className="h-4 w-4" />
+                        {isUploading ? 'Uploading...' : 'Upload Past Cases'}
+                      </label>
+                      {uploadedFile && (
+                        <span className="text-sm text-muted-foreground">
+                          ✓ {(uploadedFile as File).name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="bg-secondary/50 p-4 rounded-lg">
+                  <h3 className="font-medium mb-2">Step 2: Analyze with AI</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    After uploading past cases, click below to analyze the current visit with AI.
+                  </p>
+                  <Button
+                    onClick={handleAnalyzeWithAI}
+                    disabled={!uploadedFile || isAnalyzing}
+                    className="flex items-center gap-2"
+                  >
+                    <Activity className="h-4 w-4" />
+                    {isAnalyzing ? "Analyzing..." : "Get Second Opinion"}
+                  </Button>
+                </div>
+
+                {aiAnalysisResult && (
+                  <div className="mt-6">
+                    <h2 className="text-xl font-bold mb-4">AI Analysis Results</h2>
+                    {renderAnalysisContent(aiAnalysisResult)}
+                  </div>
+                )}
+              </div>
+              <div className="flex justify-end pt-4">
+                <Button onClick={() => setShowAnalysisModal(false)}>Close</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <CardDescription className="text-lg mb-4">Visit Summary - {visitSummaryData.biodata.name}</CardDescription>
+        <p className="text-muted-foreground text-sm mb-6">Visit Date: {visitSummaryData.visit_date}</p>
+
+        {showAnalysisResultOnPage && aiAnalysisResult && (
+          <div className="mt-6">
+            <h2 className="text-xl font-bold mb-4">AI Analysis Results</h2>
+            {renderAnalysisContent(aiAnalysisResult)}
+          </div>
+        )}
+
+        <div className="space-y-6">
+          {/* Patient Demographics */}
+          <div className="bg-secondary/50 p-4 rounded-lg">
+            <h3 className="text-lg font-bold mb-3">Patient Demographics</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-2">
+              <div>
+                <p className="font-medium">Name: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.name}</span></p>
+              </div>
+              <div>
+                <p className="font-medium">Age: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.age} years</span></p>
+              </div>
+              <div>
+                <p className="font-medium">Gender: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.gender}</span></p>
+              </div>
+              <div>
+                <p className="font-medium">Occupation: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.occupation}</span></p>
+              </div>
+              <div>
+                <p className="font-medium">Marital Status: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.marital_status}</span></p>
+              </div>
+              <div>
+                <p className="font-medium">Residence: <span className="font-normal text-muted-foreground">{visitSummaryData.biodata.residence}</span></p>
+              </div>
+            </div>
+          </div>
+
+          {/* Clinical History */}
+          <div className="bg-secondary/50 p-4 rounded-lg">
+            <h3 className="text-lg font-bold mb-3">Clinical History</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="font-medium">Chief Complaint:</p>
+                <p className="text-muted-foreground text-sm">{visitSummaryData.chief_complaint}</p>
+              </div>
+              <div>
+                <p className="font-medium">History of Present Illness:</p>
+                <p className="text-muted-foreground text-sm">{visitSummaryData.history_present_illness}</p>
+              </div>
+              {visitSummaryData.past_medical_history && (
+                <div>
+                  <p className="font-medium">Past Medical History:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.past_medical_history}</p>
+                </div>
               )}
-              <Button 
-                onClick={handleSendToRAG} 
-                className="flex items-center gap-2"
-                disabled={isSending}
-              >
-                <Send size={16} />
-                {isSending ? "Sending..." : "Get Second Opinion"}
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {currentVisit && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-xl">Visit Summary - {currentVisit.biodata.name}</CardTitle>
-            <CardDescription>
-              Visit Date: {new Date(currentVisit.visit_date).toLocaleDateString()}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Patient Demographics */}
-            <div>
-              <Label className="text-lg font-semibold text-gray-800">Patient Demographics</Label>
-              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-                <div><strong>Name:</strong> {currentVisit.biodata.name}</div>
-                <div><strong>Age:</strong> {currentVisit.biodata.age} years</div>
-                <div><strong>Gender:</strong> {currentVisit.biodata.gender}</div>
-                <div><strong>Occupation:</strong> {currentVisit.biodata.occupation}</div>
-                <div><strong>Marital Status:</strong> {currentVisit.biodata.marital_status}</div>
-                <div><strong>Residence:</strong> {currentVisit.biodata.residence}</div>
-              </div>
-            </div>
-
-            {/* Clinical History */}
-            <div>
-              <Label className="text-lg font-semibold text-gray-800">Clinical History</Label>
-              <div className="mt-2 space-y-3">
+              {visitSummaryData.family_history && (
                 <div>
-                  <strong>Chief Complaint:</strong>
-                  <p className="text-gray-700">{currentVisit.chief_complaint}</p>
+                  <p className="font-medium">Family History:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.family_history}</p>
                 </div>
+              )}
+              {visitSummaryData.social_history && (
                 <div>
-                  <strong>History of Present Illness:</strong>
-                  <p className="text-gray-700 whitespace-pre-wrap">{currentVisit.history_present_illness}</p>
+                  <p className="font-medium">Social History:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.social_history}</p>
                 </div>
-              </div>
+              )}
+              {visitSummaryData.review_of_systems && (
+                <div>
+                  <p className="font-medium">Review of Systems:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.review_of_systems}</p>
+                </div>
+              )}
             </div>
+          </div>
 
-            {/* Physical Examination */}
-            <div>
-              <Label className="text-lg font-semibold text-gray-800">Physical Examination</Label>
-              <div className="mt-2 space-y-2">
-                <div><strong>Vital Signs:</strong> {currentVisit.physical_examination.vital_signs}</div>
-                <div><strong>General:</strong> {currentVisit.physical_examination.general_examination}</div>
-                <div><strong>Systemic:</strong> {currentVisit.physical_examination.systemic_examination}</div>
-                <div><strong>Special:</strong> {currentVisit.physical_examination.special_examinations}</div>
+          {/* Physical Examination */}
+          <div className="bg-secondary/50 p-4 rounded-lg">
+            <h3 className="text-lg font-bold mb-3">Physical Examination</h3>
+            <div className="space-y-4">
+              {visitSummaryData.physical_examination.vital_signs && (
+                <div>
+                  <p className="font-medium">Vital Signs:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.physical_examination.vital_signs}</p>
+                </div>
+              )}
+              {visitSummaryData.physical_examination.general_examination && (
+                <div>
+                  <p className="font-medium">General Examination:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.physical_examination.general_examination}</p>
+                </div>
+              )}
+              <div>
+                <p className="font-medium">Systemic Examination:</p>
+                <p className="text-muted-foreground text-sm">{visitSummaryData.physical_examination.systemic_examination}</p>
               </div>
+              {visitSummaryData.physical_examination.special_examinations && (
+                <div>
+                  <p className="font-medium">Special Examinations:</p>
+                  <p className="text-muted-foreground text-sm">{visitSummaryData.physical_examination.special_examinations}</p>
+                </div>
+              )}
             </div>
+          </div>
 
-            {/* Investigations */}
-            <div>
-              <Label className="text-lg font-semibold text-gray-800">Investigations</Label>
-              <div className="mt-2 space-y-2">
-                {currentVisit.investigations.map((inv, index) => (
-                  <div key={index} className="p-3 bg-gray-50 rounded">
-                    <div className="font-medium">{inv.name} ({inv.type})</div>
-                    <div><strong>Result:</strong> {inv.results}</div>
-                    {inv.reference_values && <div><strong>Reference:</strong> {inv.reference_values}</div>}
-                    {inv.interpretation && <div><strong>Interpretation:</strong> {inv.interpretation}</div>}
+          {/* Investigations */}
+          {visitSummaryData.investigations && visitSummaryData.investigations.length > 0 && (
+            <div className="bg-secondary/50 p-4 rounded-lg">
+              <h3 className="text-lg font-bold mb-3">Investigations</h3>
+              <div className="space-y-4">
+                {visitSummaryData.investigations.map((inv, index) => (
+                  <div key={index}>
+                    <p className="font-medium">{inv.name} ({inv.type}):</p>
+                    <p className="text-muted-foreground text-sm">Results: {inv.results}</p>
+                    {inv.reference_values && <p className="text-muted-foreground text-sm">Reference: {inv.reference_values}</p>}
+                    {inv.interpretation && <p className="text-muted-foreground text-sm">Interpretation: {inv.interpretation}</p>}
                   </div>
                 ))}
               </div>
             </div>
+          )}
 
-            {/* RAG Export Preview */}
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <Label className="text-lg font-semibold text-blue-800">RAG System Payload Preview</Label>
-              <p className="text-sm text-blue-600 mt-1">
-                This visit data will be formatted with metadata for optimal RAG system processing
-              </p>
-              <div className="mt-3">
-                <Button onClick={handleExportRAG} className="w-full">
-                  <Download size={16} className="mr-2" />
-                  Generate & Export RAG Payload
-                </Button>
-              </div>
+          {/* Clinical Notes */}
+          {visitSummaryData.clinical_notes && (
+            <div className="bg-secondary/50 p-4 rounded-lg">
+              <h3 className="text-lg font-bold mb-3">Clinical Notes</h3>
+              <p className="text-muted-foreground text-sm">{visitSummaryData.clinical_notes}</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
 
-      {!currentVisit && (
-        <Card>
-          <CardContent className="text-center py-12">
-            <FileText size={48} className="mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No Current Visit</h3>
-            <p className="text-gray-600 mb-4">
-              Load the sample case or create a new visit summary to export data for RAG systems.
-            </p>
-            <Button onClick={handleLoadSampleCase}>
-              Load Sample Case (Mr. Mutuma Mwani)
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-    </div>
+          {/* Assessment and Plan */}
+          {visitSummaryData.assessment_plan && (
+            <div className="bg-secondary/50 p-4 rounded-lg">
+              <h3 className="text-lg font-bold mb-3">Assessment and Plan</h3>
+              <p className="text-muted-foreground text-sm">{visitSummaryData.assessment_plan}</p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
-};
-
-export default VisitSummary;
+}

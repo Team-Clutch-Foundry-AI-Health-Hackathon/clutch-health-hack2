@@ -1,166 +1,225 @@
 import OpenAI from 'openai';
+import pdfParse from 'pdf-parse';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   organization: process.env.OPENAI_ORG_ID,
 });
 
+interface HealthData {
+  [key: string]: any;
+}
+
 export interface HealthAnalysis {
-  summary: string;
-  concerns: string[];
-  tips: string[];
-  doctorRecommendation: {
-    needed: boolean;
-    urgency: 'routine' | 'soon' | 'urgent';
-    specialistType?: string;
-    reason?: string;
+  analysis: string;
+  comparison: string;
+  riskFactors: string[];
+  recommendations: string[];
+  diagnosis: {
+    guidelines: string[];
+    nextSteps: string[];
   };
+  prognosis: {
+    researchBased: string;
+    visitBased: string;
+  };
+  finalRecommendation: string;
+  references: {
+    journal: string;
+    title: string;
+    year: string;
+    url: string;
+  }[];
 }
 
-export interface ClinicalAnalysis {
+interface PastCase {
+  date: string;
   diagnosis: string[];
-  differentialDiagnosis: string[];
-  recommendedTests: string[];
-  treatmentPlan: string[];
-  followUpRecommendations: string[];
-  urgency: 'routine' | 'soon' | 'urgent';
+  treatment: string[];
+  outcome: string[];
 }
 
-export async function analyzeHealthData(data: any): Promise<HealthAnalysis | ClinicalAnalysis> {
-  if (data.type === 'clinical_analysis') {
-    const prompt = `You are a knowledgeable healthcare professional. Analyze this patient's visit summary:
+// Initialize past cases cache
+let pastCasesCache: PastCase[] = [];
 
-${JSON.stringify(data.visit_summary, null, 2)}
-
-Provide your analysis in the following EXACT JSON format:
-{
-  "diagnosis": ["List of primary diagnoses"],
-  "differentialDiagnosis": ["List of possible alternative diagnoses"],
-  "recommendedTests": ["List of recommended diagnostic tests"],
-  "treatmentPlan": ["List of treatment recommendations"],
-  "followUpRecommendations": ["List of follow-up recommendations"],
-  "urgency": "routine" or "soon" or "urgent"
+async function extractTextFromPDF(pdfBuffer: Buffer): Promise<string> {
+  try {
+    const data = await pdfParse(pdfBuffer);
+    return data.text;
+  } catch (error) {
+    console.error('Error extracting text from PDF:', error);
+    throw error;
+  }
 }
 
-Make sure to:
-1. Include ALL fields exactly as shown
-2. Use arrays for all lists
-3. Use the exact urgency values: "routine", "soon", or "urgent"
-4. Return ONLY the JSON object, no other text`;
+export async function loadPastCases(pdfBuffer: Buffer): Promise<void> {
+  try {
+    const text = await extractTextFromPDF(pdfBuffer);
+    const cases = parseCasesFromText(text);
+    pastCasesCache = cases;
+  } catch (error) {
+    console.error('Error loading past cases:', error);
+    throw error;
+  }
+}
 
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4-turbo-preview",
-        messages: [
-          {
-            role: "system",
-            content: "You are a knowledgeable healthcare professional. Provide clear, professional analysis while being mindful of medical ethics and privacy. Never make definitive medical diagnoses without proper clinical context. Always return valid JSON matching the exact structure requested."
-          },
-          {
-            role: "user",
-            content: prompt
-          }
-        ],
-        response_format: { type: "json_object" },
-      });
-
-      if (!response.choices?.[0]?.message?.content) {
-        throw new Error('No response content from OpenAI');
+function parseCasesFromText(text: string): PastCase[] {
+  const cases: PastCase[] = [];
+  const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  
+  let currentCase: Partial<PastCase> = {};
+  
+  for (const line of lines) {
+    // Look for date patterns (e.g., MM/DD/YYYY or Month DD, YYYY)
+    const dateMatch = line.match(/(\d{1,2}\/\d{1,2}\/\d{4})|([A-Za-z]+\s+\d{1,2},\s+\d{4})/);
+    if (dateMatch) {
+      // If we have a previous case, save it
+      if (currentCase.date && currentCase.diagnosis?.length) {
+        cases.push(currentCase as PastCase);
       }
+      // Start a new case
+      currentCase = {
+        date: dateMatch[0],
+        diagnosis: [],
+        treatment: [],
+        outcome: []
+      };
+      continue;
+    }
 
-      const analysis = JSON.parse(response.choices[0].message.content) as ClinicalAnalysis;
-
-      // Validate the response structure
-      if (!Array.isArray(analysis.diagnosis) || 
-          !Array.isArray(analysis.differentialDiagnosis) ||
-          !Array.isArray(analysis.recommendedTests) ||
-          !Array.isArray(analysis.treatmentPlan) ||
-          !Array.isArray(analysis.followUpRecommendations) ||
-          !['routine', 'soon', 'urgent'].includes(analysis.urgency)) {
-        throw new Error('Invalid response structure from OpenAI');
+    // Look for diagnosis indicators
+    if (line.toLowerCase().includes('diagnosis:') || line.toLowerCase().includes('dx:')) {
+      const diagnosis = line.split(':')[1]?.trim() || '';
+      if (diagnosis) {
+        currentCase.diagnosis = [diagnosis];
       }
+      continue;
+    }
 
-      return analysis;
-    } catch (error) {
-      console.error('OpenAI API error:', error);
-      throw error;
+    // Look for treatment indicators
+    if (line.toLowerCase().includes('treatment:') || line.toLowerCase().includes('tx:')) {
+      const treatment = line.split(':')[1]?.trim() || '';
+      if (treatment) {
+        currentCase.treatment = [treatment];
+      }
+      continue;
+    }
+
+    // Look for outcome indicators
+    if (line.toLowerCase().includes('outcome:') || line.toLowerCase().includes('result:')) {
+      const outcome = line.split(':')[1]?.trim() || '';
+      if (outcome) {
+        currentCase.outcome = [outcome];
+      }
+      continue;
+    }
+
+    // If we're in a case and the line doesn't match any patterns,
+    // append it to the last non-empty field
+    if (currentCase.date) {
+      if (!currentCase.diagnosis?.length) {
+        currentCase.diagnosis = [line];
+      } else if (!currentCase.treatment?.length) {
+        currentCase.treatment = [line];
+      } else if (!currentCase.outcome?.length) {
+        currentCase.outcome = [line];
+      }
     }
   }
 
-  // Original health check-in analysis logic
-  const prompt = `You are a helpful virtual health assistant. Analyze this patient's self-reported health data:
-
-${JSON.stringify(data, null, 2)}
-
-Provide your analysis in the following EXACT JSON format:
-{
-  "summary": "A brief summary of their health status",
-  "concerns": ["List of potential health concerns"],
-  "tips": ["List of 2-3 personalized wellness tips"],
-  "doctorRecommendation": {
-    "needed": true/false,
-    "urgency": "routine" or "soon" or "urgent",
-    "specialistType": "Type of specialist if needed",
-    "reason": "Reason for recommendation"
+  // Add the last case if it exists
+  if (currentCase.date && currentCase.diagnosis?.length) {
+    cases.push(currentCase as PastCase);
   }
+
+  return cases;
 }
 
-Make sure to:
-1. Include ALL fields exactly as shown
-2. Use arrays for concerns and tips
-3. Use the exact urgency values: "routine", "soon", or "urgent"
-4. Return ONLY the JSON object, no other text`;
-
+export async function analyzeHealthData(data: HealthData): Promise<HealthAnalysis> {
   try {
+    const pastCasesText = pastCasesCache.map(case_ => 
+      `Date: ${case_.date}\nDiagnosis: ${case_.diagnosis.join(', ')}\nTreatment: ${case_.treatment.join(', ')}\nOutcome: ${case_.outcome.join(', ')}`
+    ).join('\n\n');
+
+    const prompt = `Analyze the following health data and past medical cases. Provide a detailed analysis with at least 3 relevant African-focused medical journal references or research articles.
+
+Current Health Data:
+${JSON.stringify(data, null, 2)}
+
+Past Medical Cases:
+${pastCasesText}
+
+Please provide:
+1. A detailed analysis of the current health data
+2. Comparison with past cases
+3. Potential risk factors and concerns
+4. Recommendations for monitoring and follow-up
+5. Diagnosis guidelines and recommended next steps
+6. Prognosis analysis based on:
+   - Current medical research
+   - Similar cases from previous visits
+7. Final recommendation with clear action items, including: order diagnosis X, administer medication Y based on research and past visits, consider imaging Z (if relevant), review lab A results, and provide a prognosis percentage (e.g., X% chance of Y outcome) based on past visits and research.
+8. At least 3 relevant African-focused medical journal references with titles, years, and links to the articles
+
+Format the response as a JSON object with the following structure:
+{
+  "analysis": "Detailed analysis text",
+  "comparison": "Comparison with past cases",
+  "riskFactors": ["Factor 1", "Factor 2", ...],
+  "recommendations": ["Recommendation 1", "Recommendation 2", ...],
+  "diagnosis": {
+    "guidelines": ["Guideline 1", "Guideline 2", ...],
+    "nextSteps": ["Step 1", "Step 2", ...]
+  },
+  "prognosis": {
+    "researchBased": "Prognosis based on current medical research",
+    "visitBased": "Prognosis based on similar past cases"
+  },
+  "finalRecommendation": "Clear, actionable final recommendation, including diagnosis, medication, imaging (if present), lab results, and prognosis percentage.",
+  "references": [
+    {
+      "journal": "Journal name",
+      "title": "Paper title",
+      "year": "Publication year",
+      "url": "Link to the article"
+    }
+  ]
+}
+
+IMPORTANT: Return ONLY the JSON object, without any markdown formatting or code block syntax.`;
+
     const response = await openai.chat.completions.create({
       model: "gpt-4-turbo-preview",
       messages: [
         {
           role: "system",
-          content: "You are a knowledgeable healthcare assistant. Provide clear, professional analysis while being mindful of medical ethics and privacy. Never make definitive medical diagnoses. Always return valid JSON matching the exact structure requested."
+          content: "You are a medical AI assistant. Provide detailed, evidence-based analysis with proper medical journal references. Consider both current medical guidelines and patterns from past cases when making recommendations. Return ONLY the JSON object without any markdown formatting."
         },
         {
           role: "user",
           content: prompt
         }
       ],
-      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 2000
     });
 
-    if (!response.choices?.[0]?.message?.content) {
-      throw new Error('No response content from OpenAI');
-    }
+    const content = response.choices[0].message.content || '{}';
+    // Clean the response by removing any markdown code block syntax
+    const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim();
+    const analysis = JSON.parse(cleanedContent) as HealthAnalysis;
 
-    console.log('OpenAI Response:', response.choices[0].message.content);
-
-    const analysis = JSON.parse(response.choices[0].message.content) as HealthAnalysis;
-
-    // Validate the response structure
-    if (!analysis.summary || !Array.isArray(analysis.concerns) || !Array.isArray(analysis.tips) || !analysis.doctorRecommendation) {
-      console.error('Invalid analysis structure:', analysis);
+    // Validate response structure
+    if (!analysis.analysis || !analysis.comparison || !Array.isArray(analysis.riskFactors) || 
+        !Array.isArray(analysis.recommendations) || !Array.isArray(analysis.references) || 
+        analysis.references.length < 3 || !analysis.diagnosis || !analysis.prognosis || 
+        !analysis.finalRecommendation) {
       throw new Error('Invalid response structure from OpenAI');
-    }
-
-    // Validate doctorRecommendation structure
-    if (typeof analysis.doctorRecommendation.needed !== 'boolean' || 
-        !['routine', 'soon', 'urgent'].includes(analysis.doctorRecommendation.urgency)) {
-      console.error('Invalid doctorRecommendation structure:', analysis.doctorRecommendation);
-      throw new Error('Invalid doctorRecommendation structure');
     }
 
     return analysis;
   } catch (error) {
-    console.error('OpenAI API error:', error);
-    // Return a default analysis in case of error
-    return {
-      summary: "Unable to analyze health data at this time.",
-      concerns: ["Unable to analyze concerns"],
-      tips: ["Please try again later"],
-      doctorRecommendation: {
-        needed: false,
-        urgency: "routine",
-        reason: "Unable to complete analysis"
-      }
-    };
+    console.error('Error analyzing health data:', error);
+    throw error;
   }
 }

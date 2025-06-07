@@ -12,7 +12,7 @@ import Investigations from "@/components/Investigations";
 import LabRequests from "@/components/LabRequests";
 import ImagingRequests from "@/components/ImagingRequests";
 import MedicationOrders from "@/components/MedicationOrders";
-import VisitSummary from "@/components/VisitSummary";
+import { VisitSummary } from "@/components/VisitSummary";
 
 // Sample visit data from VisitSummary.tsx
 const sampleVisitData = {
@@ -82,7 +82,8 @@ const sampleVisitData = {
       results: "Adenocarcinoma, Gleason score 8 (4+4)",
       interpretation: "High-grade prostate cancer"
     }
-  ]
+  ],
+  user_id: "clutch-user-123"
 };
 
 const Index = () => {
@@ -176,7 +177,10 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="visit-summary">
-            <VisitSummary />
+            <VisitSummary visitSummaryData={sampleVisitData} onClose={function (): void {
+              // This function can be implemented if there's a need to close the summary from within the component
+              // For now, it's a placeholder as the modal handles its own close state.
+            } } />
           </TabsContent>
         </Tabs>
       </div>
