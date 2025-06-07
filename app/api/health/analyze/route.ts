@@ -1,11 +1,29 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
-import { analyzeHealthData } from '@/lib/openai';
+import { analyzeHealthData, HealthAnalysis, ClinicalAnalysis } from '@/lib/openai';
+
+interface AnalyzeRequest {
+  type?: 'clinical_analysis';
+  visit_summary?: any;
+  date?: string;
+  mood?: number;
+  energy?: number;
+  sleep?: number;
+  symptoms?: string[];
+  userProfile?: {
+    age: number;
+    gender: string;
+    conditions: string[];
+    medications: string[];
+    allergies: string[];
+    lifestyle: string;
+  } | null;
+}
 
 export async function POST(req: Request) {
   try {
-    const data = await req.json();
+    const data: AnalyzeRequest = await req.json();
     
     if (!data) {
       return NextResponse.json(
