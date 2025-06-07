@@ -320,7 +320,7 @@ export default function DailyCheckInPage() {
               <ul className="mt-2 text-sm text-green-800 dark:text-green-300 space-y-1 ml-7">
                 <li>+20 XP points</li>
                 <li>Streak extended to 8 days</li>
-                <li>Progress toward "Consistent Tracker" badge</li>
+                <li>Progress toward &quot;Consistent Tracker&quot; badge</li>
               </ul>
             </div>
           </div>

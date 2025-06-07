@@ -49,15 +49,24 @@ export default function DashboardPage() {
             Welcome back! Continue your health journey.
           </p>
         </div>
-        {!todayCompleted && (
-          <Button asChild className="bg-gradient-to-r from-rose-500 to-indigo-500 text-white">
-            <Link href="/daily-check-in" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Complete Today's Check-in
+        <div className="flex gap-2">
+          {!todayCompleted && (
+            <Button asChild className="bg-gradient-to-r from-rose-500 to-indigo-500 text-white">
+              <Link href="/daily-check-in" className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                Complete Today&apos;s Check-in
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          )}
+          <Button variant="outline" asChild>
+            <Link href="/dashboard/clinician" className="flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              View Clinician Side
               <ChevronRight className="h-4 w-4" />
             </Link>
           </Button>
-        )}
+        </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -151,7 +160,7 @@ export default function DashboardPage() {
                 </CardContent>
                 <CardFooter className="flex justify-between">
                   <p className="text-sm text-muted-foreground">
-                    You've checked in 23 days this month
+                    You&apos;ve checked in 23 days this month
                   </p>
                   <Button variant="ghost" size="sm" asChild>
                     <Link href="/health-metrics">View Detailed History</Link>
@@ -231,7 +240,7 @@ export default function DashboardPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold">Hydration Notice</h4>
-                  <p className="text-sm text-muted-foreground">You've reported feeling dehydrated 3 times this week. Consider setting a water intake reminder.</p>
+                  <p className="text-sm text-muted-foreground">You&apos;ve reported feeling dehydrated 3 times this week. Consider setting a water intake reminder.</p>
                 </div>
               </div>
               
